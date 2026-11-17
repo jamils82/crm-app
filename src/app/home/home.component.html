@@ -1,0 +1,270 @@
+<div class="page">
+
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo">CFS</div>
+      <div>
+        <div class="brand-name">CFS Portal</div>
+        <div class="brand-sub">CRM Lite</div>
+      </div>
+    </div>
+    <div class="breadcrumb">Home &nbsp;›&nbsp; Social Media Campaign</div>
+  </header>
+
+  <main class="content">
+    <div class="page-header">
+      <div class="page-title">Social Media Campaign</div>
+      <div class="page-sub">Connect Facebook Pages and linked Instagram accounts and publish a post directly from the CRM</div>
+    </div>
+
+    @if (usingPlaceholderAppId) {
+      <div class="notice">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>Using a placeholder Facebook App ID.</strong>
+          Replace <code>facebookAppId</code> in <code>src/environments/environment.ts</code> with a real
+          (or Test Mode) App ID from
+          <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a>
+          before trying to connect — Facebook will reject login attempts for an unregistered App ID.
+        </div>
+      </div>
+    }
+
+    @if (!connected && !hasLoginConfigId) {
+      <div class="notice">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>Seeing "Invalid Scopes: pages_show_list, pages_manage_posts, pages_read_engagement"?</strong>
+          Meta now requires <em>Facebook Login for Business</em> (not classic Login) for any Page permission on
+          newly created apps. Fix:
+          <ol style="margin: 6px 0 0 18px; padding: 0;">
+            <li>In your App Dashboard, add product <strong>Facebook Login for Business</strong>.</li>
+            <li>Go to its <strong>Configurations</strong> tab → Create Configuration → asset type <em>Pages</em> →
+              select <code>pages_show_list</code>, <code>pages_manage_posts</code>, <code>pages_read_engagement</code>,
+              and link the Business Portfolio + Pages you want to test with.</li>
+            <li>Copy the numeric <strong>Configuration ID</strong> and paste it into
+              <code>facebookLoginConfigId</code> in <code>environment.ts</code>.</li>
+            <li>Make sure you're an Admin/Developer on the app <em>and</em> an admin of the target Page(s).</li>
+          </ol>
+        </div>
+      </div>
+    }
+
+    <div class="card">
+      <div class="card-head">
+        <div class="fb-icon">
+          <svg viewBox="0 0 24 24" fill="#1877f2"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+        </div>
+        <div>
+          <div class="card-title">Facebook Page Connection</div>
+          <div class="card-sub">Sign in with Facebook to list the Pages you manage</div>
+        </div>
+
+        @if (connected) {
+          <span class="status-pill connected">Connected</span>
+        } @else {
+          <span class="status-pill disconnected">Not connected</span>
+        }
+      </div>
+
+      <div class="card-body">
+        @if (connectError()) {
+          <div class="error-banner">{{ connectError() }}</div>
+        }
+
+        @if (!connected) {
+          <button type="button" class="fb-connect-btn" (click)="connect()" [disabled]="connecting()">
+            <svg viewBox="0 0 24 24" fill="#fff"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+            {{ connecting() ? 'Connecting…' : 'Connect Facebook Account' }}
+          </button>
+        } @else {
+
+          <div class="connected-row">
+            <div class="muted-text">Signed in — {{ pages().length }} page(s) available</div>
+            <button type="button" class="btn-text-danger" (click)="disconnect()">Disconnect</button>
+          </div>
+
+          @if (loadingPages()) {
+            <div class="muted-text">Loading pages…</div>
+          } @else if (!pages().length) {
+
+            <div class="notice">
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <div>
+                <strong>Connected, but no Pages came back from Facebook.</strong>
+                Facebook remembers the first grant and won't re-show the Page picker on later logins —
+                use "Reconnect &amp; choose Pages" below to force it to ask again. If the picker still shows
+                no Pages to pick from, check:
+                <ol style="margin: 6px 0 0 18px; padding: 0;">
+                  <li>You're an <strong>admin</strong> of the Facebook Page itself (not just the app).</li>
+                  <li>The Page is added under the same <strong>Business Portfolio</strong> that's linked to
+                    this app (Business Settings → Accounts → Pages).</li>
+                  <li>Your Login Configuration's <em>Pages</em> permissions
+                    (<code>pages_show_list</code>, <code>pages_manage_posts</code>, <code>pages_read_engagement</code>)
+                    were actually saved on the configuration.</li>
+                </ol>
+              </div>
+            </div>
+            <button type="button" class="fb-connect-btn" (click)="reconnectAndChoosePages()" [disabled]="connecting()">
+              <svg viewBox="0 0 24 24" fill="#fff"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+              {{ connecting() ? 'Reconnecting…' : 'Reconnect & Choose Pages' }}
+            </button>
+
+          } @else {
+
+            <div class="form-group">
+              <label>Connected Pages <span class="opt">({{ pages().length }})</span></label>
+              <div class="connected-list">
+                @for (page of pages(); track page.id) {
+                  <div class="connected-item">
+                    @if (page.picture?.data?.url) {
+                      <img class="page-avatar" [src]="page.picture!.data.url" alt="">
+                    } @else {
+                      <div class="page-avatar placeholder-avatar">{{ page.name.charAt(0) }}</div>
+                    }
+                    <div class="connected-info">
+                      <div class="page-name">{{ page.name }}</div>
+                      <div class="page-category">
+                        {{ page.category || 'Facebook Page' }}
+                        @if (page.instagram_business_account?.username) {
+                          · &#64;{{ page.instagram_business_account!.username }}
+                        }
+                      </div>
+                    </div>
+                    <div class="platform-icons">
+                      <span class="platform-badge fb" title="Facebook Page connected">
+                        <svg viewBox="0 0 24 24" fill="#fff"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>
+                      </span>
+                      @if (page.instagram_business_account) {
+                        <span class="platform-badge ig" title="Instagram account connected">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#fff" stroke="none"/></svg>
+                        </span>
+                      } @else {
+                        <span class="platform-badge off" title="No Instagram account linked">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.5" cy="6.5" r="1" fill="#fff" stroke="none"/></svg>
+                        </span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Post To <span class="req">*</span></label>
+              <div class="ms-dropdown" [class.open]="pagesDropdownOpen()">
+                <button type="button" class="ms-trigger" (click)="togglePagesDropdown()">
+                  <span [class.placeholder]="!selectedDestinations.length">{{ selectedSummary }}</span>
+                  <svg class="ms-caret" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div class="ms-panel">
+                  @for (dest of destinations; track dest.key) {
+                    <label class="page-item" [class.selected]="isPageSelected(dest.key)">
+                      <input
+                        type="checkbox"
+                        [checked]="isPageSelected(dest.key)"
+                        (change)="togglePage(dest.key, $any($event.target).checked)"
+                      >
+                      @if (dest.avatarUrl) {
+                        <img class="page-avatar" [src]="dest.avatarUrl" alt="">
+                      } @else {
+                        <div class="page-avatar placeholder-avatar">{{ dest.label.replace('@', '').charAt(0) }}</div>
+                      }
+                      <div>
+                        <div class="page-name">{{ dest.label }}</div>
+                        <div class="page-category">{{ dest.sublabel }}</div>
+                      </div>
+                      <span class="page-connected">{{ dest.type === 'instagram' ? 'Instagram' : 'Facebook' }}</span>
+                    </label>
+                  } @empty {
+                    <div class="muted-text" style="padding: 10px;">No accounts found.</div>
+                  }
+                </div>
+              </div>
+              @if (missingIgPermissions().length) {
+                <div class="error-banner" style="margin-top: 8px;">
+                  Facebook did not grant: <strong>{{ missingIgPermissions().join(', ') }}</strong>. Add them to your
+                  Facebook Login for Business configuration (App Dashboard → Facebook Login for Business →
+                  Configurations → select Instagram/Pages permissions), then Disconnect and reconnect.
+                </div>
+              }
+              @if (!hasInstagramAccounts) {
+                <div class="hint">
+                  No Instagram account found. It must be a Business/Creator account linked to one of these
+                  Pages (Page settings → Linked accounts). If it is linked, click Disconnect and reconnect, and
+                  make sure <code>instagram_basic</code> and <code>instagram_content_publish</code> are added to your
+                  Facebook Login for Business configuration.
+                </div>
+              }
+            </div>
+
+            <div class="form-group">
+              <label>Post Description <span class="req">*</span></label>
+              <textarea [(ngModel)]="postDescription" rows="4"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label>Image URL <span class="opt">(optional — public https URL, used if no file is uploaded)</span></label>
+              <input type="text" [(ngModel)]="imageUrl" placeholder="https://example.com/flyer.jpg">
+            </div>
+
+            <div class="form-group">
+              <label>Upload Image <span class="opt">(optional for Facebook, required for Instagram — JPEG recommended)</span></label>
+              <div class="dropzone" (click)="fileInput.click()">
+                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <div>Click to choose an image to publish</div>
+              </div>
+              <input #fileInput type="file" accept="image/*" style="display:none" (change)="onFileSelected($event)">
+
+              @if (localPreviewUrl) {
+                <div class="local-preview">
+                  <img [src]="localPreviewUrl" alt="">
+                  <div>
+                    <div class="page-name">{{ localFileName }}</div>
+                    <button type="button" class="btn-text-danger" (click)="clearLocalFile()">Remove</button>
+                  </div>
+                </div>
+              }
+            </div>
+
+            @if (missingImageForInstagram) {
+              <div class="hint" style="margin-bottom: 8px;">Instagram posts need an image — upload one or enter an Image URL.</div>
+            }
+
+            <button
+              type="button"
+              class="publish-btn"
+              (click)="publish()"
+              [disabled]="publishing() || !selectedDestinations.length || !postDescription.trim() || missingImageForInstagram"
+            >
+              <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              {{ publishing() ? 'Publishing…' : 'Publish Post' }}
+            </button>
+
+            @if (results().length) {
+              <div class="results">
+                @for (result of results(); track result.platform + result.pageId) {
+                  <div class="result-row" [class.ok]="result.ok" [class.fail]="!result.ok">
+                    @if (result.ok) {
+                      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                    } @else {
+                      <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    }
+                    <div>
+                      <strong>{{ result.pageName }}</strong>
+                      @if (result.ok) {
+                        <span> — published (post id: {{ result.postId }})</span>
+                      } @else {
+                        <span> — {{ result.error }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          }
+        }
+      </div>
+    </div>
+  </main>
+</div>
