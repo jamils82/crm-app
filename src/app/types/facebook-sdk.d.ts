@@ -35,7 +35,7 @@ export interface FacebookSDK {
     }
   ): void;
   logout(callback?: (response: unknown) => void): void;
-  getLoginStatus(callback: (response: FacebookLoginStatusResponse) => void): void;
+  getLoginStatus(callback: (response: FacebookLoginStatusResponse) => void, forceRefresh?: boolean): void;
   api(
     path: string,
     method: string,

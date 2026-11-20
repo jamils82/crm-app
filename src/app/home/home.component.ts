@@ -49,6 +49,8 @@ export class HomeComponent {
 
   readonly connecting = signal(false);
   readonly loadingPages = signal(false);
+  readonly refreshingToken = signal(false);
+  readonly refreshMessage = signal<string | null>(null);
   readonly publishing = signal(false);
   readonly connectError = signal<string | null>(null);
   /** Instagram permissions Facebook did not grant on the last login. */
@@ -75,7 +77,16 @@ export class HomeComponent {
     private readonly fb: FacebookService,
     private readonly host: ElementRef<HTMLElement>
   ) {
+    this.fb.restoreToken();
     this.restoreFromStorage();
+  }
+
+  /** Only known for a live login this session; cached Pages from earlier sessions may be stale. */
+  get tokenStatus(): string {
+    if (!this.connected) return '';
+    return this.fb.longLived()
+      ? 'long-lived token (~60 days)'
+      : 'short-lived token (~1 hour) — start the token service (cd server && npm start) and reconnect';
   }
 
   get connected(): boolean {
@@ -157,6 +168,26 @@ export class HomeComponent {
     await this.connect(true);
   }
 
+  /** Gets a fresh token (extended to ~60 days) and reloads the Pages with the new Page tokens. */
+  async refreshToken(): Promise<void> {
+    this.connectError.set(null);
+    this.refreshMessage.set(null);
+    this.refreshingToken.set(true);
+    try {
+      await this.fb.refreshToken();
+      await this.loadPages(true);
+      this.refreshMessage.set(
+        this.fb.longLived()
+          ? 'Token refreshed — valid for about 60 days.'
+          : 'Token refreshed, but it is short-lived (~1 hour). Start the token service (cd server && npm start) and refresh again.'
+      );
+    } catch (err) {
+      this.connectError.set(err instanceof Error ? err.message : 'Could not refresh the token.');
+    } finally {
+      this.refreshingToken.set(false);
+    }
+  }
+
   async disconnect(): Promise<void> {
     await this.fb.logout();
     this.pages.set([]);
@@ -166,13 +197,17 @@ export class HomeComponent {
     this.clearStorage();
   }
 
-  private async loadPages(): Promise<void> {
+  private async loadPages(keepSelection = false): Promise<void> {
     this.loadingPages.set(true);
     try {
+      const previous = this.selectedPageIds();
       const pages = await this.fb.fetchPages();
       this.pages.set(pages);
-      // Pre-select every page the user manages by default.
-      this.selectedPageIds.set(new Set(this.destinations.map((d) => d.key)));
+      // Pre-select every page the user manages by default (or keep the current choice on a refresh).
+      const allKeys = this.destinations.map((d) => d.key);
+      this.selectedPageIds.set(
+        new Set(keepSelection ? allKeys.filter((k) => previous.has(k)) : allKeys)
+      );
       this.restoredConnection.set(true);
       this.saveToStorage();
 
@@ -315,6 +350,13 @@ export class HomeComponent {
         })
       );
       this.results.set(outcomes);
+
+      // Expired/invalid token (Graph error 190): the cached login is stale.
+      if (outcomes.some((o) => !o.ok && /session has expired|access token|OAuthException/i.test(o.error ?? ''))) {
+        this.connectError.set(
+          'Your Facebook session has expired. Click Disconnect, then Connect Facebook Account again to refresh it.'
+        );
+      }
     } finally {
       this.publishing.set(false);
     }

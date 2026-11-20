@@ -12,10 +12,14 @@ import { FacebookSDK } from '../types/facebook-sdk';
  * uploads and long-lived token storage should go through a backend once
  * one exists — see the header comment in home.component.ts for the plan.
  */
+const TOKEN_KEY = 'cfs-crm-fb-user-token';
+
 @Injectable({ providedIn: 'root' })
 export class FacebookService {
   readonly connected = signal(false);
   readonly userAccessToken = signal<string | null>(null);
+  /** True when the login token was swapped for a ~60-day one by the token service. */
+  readonly longLived = signal(false);
 
   private sdkPromise: Promise<FacebookSDK> | null = null;
 
@@ -87,7 +91,9 @@ export class FacebookService {
         if (response.status === 'connected' && response.authResponse) {
           this.connected.set(true);
           this.userAccessToken.set(response.authResponse.accessToken);
-          resolve(response.authResponse.accessToken);
+          this.longLived.set(false);
+          // Swap for a ~60-day token (needs the App Secret, so it happens server-side).
+          this.extendToken(response.authResponse.accessToken).then(() => resolve(this.userAccessToken()!));
         } else {
           this.connected.set(false);
           this.userAccessToken.set(null);
@@ -97,12 +103,92 @@ export class FacebookService {
     });
   }
 
+  /**
+   * Silent refresh: re-exchanges the token we already hold for a new long-lived one
+   * through the token service. No Facebook dialog is ever shown. Throws if the token
+   * is missing or no longer valid, in which case the user must Connect again.
+   */
+  async refreshToken(): Promise<void> {
+    const current = this.userAccessToken();
+    if (!current) {
+      throw new Error('No saved Facebook session. Please click Connect Facebook Account.');
+    }
+    const fresh = await this.requestExtension(current);
+    this.userAccessToken.set(fresh);
+    this.longLived.set(true);
+    this.persistToken();
+  }
+
+  /**
+   * Exchanges the short-lived login token for a long-lived one via the local token
+   * service. On failure we keep the short-lived token (it works for ~1–2 hours).
+   */
+  private async requestExtension(token: string): Promise<string> {
+    let res: Response;
+    try {
+      res = await fetch('/api/extend-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userToken: token })
+      });
+    } catch {
+      throw new Error('Cannot reach the token service. Start it with: cd server && npm start');
+    }
+    const json = await res.json().catch(() => null);
+    if (!json) {
+      throw new Error('The token service did not respond with JSON. Restart "ng serve" so the /api proxy is active.');
+    }
+    if (!res.ok || !json.accessToken) throw new Error(json.error ?? 'Token exchange failed.');
+    console.info('[FB] token extended, expires in (s):', json.expiresIn);
+    return json.accessToken as string;
+  }
+
+  /** Test-only: keep the long-lived user token so a reload can refresh silently. Move server-side for production. */
+  private persistToken(): void {
+    try {
+      const t = this.userAccessToken();
+      if (t && this.longLived()) localStorage.setItem(TOKEN_KEY, t);
+    } catch {
+      /* convenience only */
+    }
+  }
+
+  /** Called by the page on load to resume a previously extended session. */
+  restoreToken(): void {
+    try {
+      const t = localStorage.getItem(TOKEN_KEY);
+      if (t) {
+        this.userAccessToken.set(t);
+        this.longLived.set(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private async extendToken(shortToken: string): Promise<void> {
+    try {
+      const long = await this.requestExtension(shortToken);
+      this.userAccessToken.set(long);
+      this.longLived.set(true);
+      this.persistToken();
+    } catch (err) {
+      console.warn('[FB] could not extend token — it will expire in about an hour.', err);
+    }
+  }
+
   async logout(): Promise<void> {
     const fb = await this.loadSdk();
     return new Promise<void>((resolve) => {
       fb.logout(() => {
         this.connected.set(false);
         this.userAccessToken.set(null);
+        this.longLived.set(false);
+        try {
+          localStorage.removeItem(TOKEN_KEY);
+        } catch {
+          /* ignore */
+        }
         resolve();
       });
     });
@@ -110,38 +196,40 @@ export class FacebookService {
 
   /** Pages the logged-in user manages, each with its own Page Access Token (plus linked Instagram account, if any). */
   async fetchPages(): Promise<FacebookPage[]> {
-    const fb = await this.loadSdk();
-    return new Promise<FacebookPage[]>((resolve, reject) => {
-      const fields =
-        'id,name,category,access_token,picture,' +
-        'instagram_business_account{id,username,name,profile_picture_url},' +
-        'connected_instagram_account{id,username,name,profile_picture_url}';
-      fb.api('/me/accounts', { fields }, (response) => {
-        if (!response || response.error) {
-          reject(new Error(response?.error?.message ?? 'Failed to load pages.'));
-          return;
-        }
-        const pages = ((response.data ?? []) as any[]).map((p) => {
-          // Pages linked via "Linked accounts" can appear under either field.
-          const ig = p.instagram_business_account ?? p.connected_instagram_account;
-          const { connected_instagram_account, ...rest } = p;
-          return (ig ? { ...rest, instagram_business_account: ig } : rest) as FacebookPage;
-        });
-        console.info('[FB] /me/accounts result:', pages.map((p) => ({ page: p.name, instagram: p.instagram_business_account ?? null })));
-        resolve(pages);
-      });
+    const token = this.userAccessToken();
+    if (!token) throw new Error('Not logged in.');
+    const fields =
+      'id,name,category,access_token,picture,' +
+      'instagram_business_account{id,username,name,profile_picture_url},' +
+      'connected_instagram_account{id,username,name,profile_picture_url}';
+    // Use the user token explicitly: when it is long-lived, the Page tokens returned don't expire.
+    const response = await this.graph<{ data?: any[] }>('/me/accounts', undefined, {
+      fields,
+      limit: '100',
+      access_token: token
     });
+    const pages = (response.data ?? []).map((p) => {
+      // Pages linked via "Linked accounts" can appear under either field.
+      const ig = p.instagram_business_account ?? p.connected_instagram_account;
+      const { connected_instagram_account, ...rest } = p;
+      return (ig ? { ...rest, instagram_business_account: ig } : rest) as FacebookPage;
+    });
+    console.info('[FB] /me/accounts result:', pages.map((p) => ({ page: p.name, instagram: p.instagram_business_account ?? null })));
+    return pages;
   }
 
   /** Permissions currently granted to the logged-in user (granted ones only). */
   async fetchGrantedPermissions(): Promise<string[]> {
-    const fb = await this.loadSdk();
-    return new Promise<string[]>((resolve) => {
-      fb.api('/me/permissions', {}, (response) => {
-        const list = (response?.data ?? []) as { permission: string; status: string }[];
-        resolve(list.filter((p) => p.status === 'granted').map((p) => p.permission));
+    const token = this.userAccessToken();
+    if (!token) return [];
+    try {
+      const response = await this.graph<{ data?: { permission: string; status: string }[] }>('/me/permissions', undefined, {
+        access_token: token
       });
-    });
+      return (response.data ?? []).filter((p) => p.status === 'granted').map((p) => p.permission);
+    } catch {
+      return [];
+    }
   }
 
   private get graphBase(): string {

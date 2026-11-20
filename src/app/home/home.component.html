@@ -80,9 +80,18 @@
         } @else {
 
           <div class="connected-row">
-            <div class="muted-text">Signed in — {{ pages().length }} page(s) available</div>
-            <button type="button" class="btn-text-danger" (click)="disconnect()">Disconnect</button>
+            <div class="muted-text">Signed in — {{ pages().length }} page(s) available
+              @if (tokenStatus) { · {{ tokenStatus }} }</div>
+            <div class="connected-actions">
+              <button type="button" class="btn-text" (click)="refreshToken()" [disabled]="refreshingToken() || connecting()">
+                {{ refreshingToken() ? 'Refreshing…' : 'Refresh token' }}
+              </button>
+              <button type="button" class="btn-text-danger" (click)="disconnect()">Disconnect</button>
+            </div>
           </div>
+          @if (refreshMessage()) {
+            <div class="hint">{{ refreshMessage() }}</div>
+          }
 
           @if (loadingPages()) {
             <div class="muted-text">Loading pages…</div>

@@ -95,6 +95,12 @@
 
 .connected-row { display: flex; align-items: center; justify-content: space-between; }
 .muted-text { font-size: 12.5px; color: var(--muted); }
+.connected-actions { display: flex; align-items: center; gap: 16px; }
+.btn-text {
+  background: none; border: none; color: var(--blue-acc); font-size: 12.5px; font-weight: 600;
+  cursor: pointer; font-family: inherit; padding: 0;
+}
+.btn-text:disabled { opacity: .5; cursor: default; }
 .btn-text-danger {
   background: none; border: none; color: var(--danger); font-size: 12.5px; font-weight: 600;
   cursor: pointer; font-family: inherit; padding: 0;
